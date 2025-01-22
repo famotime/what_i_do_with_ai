@@ -76,13 +76,13 @@ def save_text_to_file(image_path: str, text_content: str) -> None:
         raise IOError(f"保存文本文件失败: {e}")
 
 
-def process_image_directory(directory_path: str, endpoint_id: str, prompt: str) -> None:
+def process_image_directory(directory_path: str, model: str, prompt: str) -> None:
     """
     批量处理指定目录下的所有图片文件
 
     Args:
         directory_path (str): 图片目录路径
-        endpoint_id (str): 模型端点ID
+        model (str): 模型编码
         prompt (str): 提示词
     """
     directory = Path(directory_path)
@@ -104,7 +104,7 @@ def process_image_directory(directory_path: str, endpoint_id: str, prompt: str) 
     for i, image_path in enumerate(image_files, 1):
         try:
             print(f"\n处理第 {i}/{len(image_files)} 个文件: {image_path.name}")
-            response = get_completion_from_messages(str(image_path), endpoint_id, prompt)
+            response = get_completion_from_messages(str(image_path), model, api_key, prompt)
             print("提取的文本内容：")
             print(response)
 
@@ -124,17 +124,17 @@ def read_account(account_path, service):
 
 if __name__ == "__main__":
     account_path = "../account/web_accounts.json"
-    model = "glm-4v-flash"  # 模型编码：glm-4v-plus-0111beta 、glm-4v-plus 、glm-4v、glm-4v-flash；
+    model = "glm-4v-flash"  # 模型编码：glm-4v-plus-0111beta 、glm-4v-plus 、glm-4v、glm-4v-flash(免费)；
     prompt = "提取图片中的文字，但去除手机截图中的时间戳、运营商等无关信息，去除不必要的换行；仅返回图片中的文本内容，不要增加额外描述。"
     api_key = read_account(account_path, "zhipu")
 
     # 处理单个图片
-    image_path = r"H:\个人图片及视频\待整理\HLTE700T相册\截屏录屏\Screenshot_20190407_212814419_Chrome.jpg"
-    response = get_completion_from_messages(image_path, model, api_key, prompt)
-    print("\n提取的文本内容：")
-    print(response)
-    save_text_to_file(image_path, response)
+    # image_path = r"H:\个人图片及视频\待整理\HLTE700T相册\截屏录屏\Screenshot_20190407_212814419_Chrome.jpg"
+    # response = get_completion_from_messages(image_path, model, api_key, prompt)
+    # print("\n提取的文本内容：")
+    # print(response)
+    # save_text_to_file(image_path, response)
 
     # 批量处理目录下的图片
-    # directory_path = r"H:\个人图片及视频\手机截图\todo"
-    # process_image_directory(directory_path, model, prompt)
+    directory_path = r"H:\个人图片及视频\待整理\HLTE700T相册\截屏录屏"
+    process_image_directory(directory_path, model, prompt)
