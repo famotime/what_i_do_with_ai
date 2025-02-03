@@ -4,7 +4,7 @@
 处理流程：
 1. 将指定的markdown文件按2级标题拆分；
 2. 对每个拆分后的文本，调用Doubao模型进行语法修正和优化；
-3. 将修正后的文本合并保存为新的markdown文件，文件名后缀为“_modified”。
+3. 将修正后的文本合并保存为新的markdown文件，文件名后缀为"_modified"。
 """
 
 import os
@@ -93,6 +93,36 @@ def save_modified_notes(original_file, notes, system_message, endpoint_id, api_h
         file.write(modified_content)
     print(f"处理完成，结果已保存到 {modified_file}")
 
+def split_long_text(text, max_length=2000):
+    """
+    将长文本按照最大长度限制分割，在句号处截断
+
+    Args:
+        text (str): 待分割的文本
+        max_length (int): 每段最大长度限制
+
+    Returns:
+        list: 分割后的文本段落列表
+    """
+    if len(text) <= max_length:
+        return [text]
+
+    segments = []
+    while text:
+        if len(text) <= max_length:
+            segments.append(text)
+            break
+
+        # 在max_length范围内查找最后一个句号
+        pos = text[:max_length].rfind("。")
+        if pos == -1:  # 如果没找到句号，则强制在max_length处截断
+            pos = max_length
+
+        segments.append(text[:pos + 1])  # 包含句号
+        text = text[pos + 1:].lstrip()  # 移除开头的空白字符
+
+    return segments
+
 if __name__ == "__main__":
     # 火山引擎模型配置
     # endpoint_id = "ep-20241201202141-xghlt"         # doubao-pro-4k 模型端点
@@ -131,11 +161,36 @@ if __name__ == "__main__":
     # notes = split_notes(md_file, "## ")
     # save_modified_notes(md_file, notes, system_message)
 
-    # 单次处理剪贴板内容
+    # 单次处理剪贴板内容，如果剪贴板内容超过2000字，则分批处理再合并结果；截断位置为2000字范围内最近一个句号（“。”）
+    max_length = 2000
     note = pyperclip.paste()
-    messages = [{"role": "system", "content": system_message}, {"role": "user", "content": f"待优化文本包含在xml标签中：<note>{note}</note>"}]
-    corrected_note = get_completion_from_messages(messages, endpoint_id, api_host)
-    if corrected_note.startswith("<note>") and corrected_note.endswith("</note>"):
-        corrected_note = corrected_note[6:-7]  # 去掉<note>和</note>标签
+    if len(note) > max_length:
+        # 分段处理长文本
+        segments = split_long_text(note)
+        corrected_segments = []
+
+        for i, segment in enumerate(segments, 1):
+            print(f"正在处理第 {i}/{len(segments)} 段...")
+            messages = [
+                {"role": "system", "content": system_message},
+                {"role": "user", "content": f"待优化文本包含在xml标签中：<note>{segment}</note>"}
+            ]
+            corrected_segment = get_completion_from_messages(messages, endpoint_id, api_host)
+            # 如果返回结果包含<note>和</note>标签，则去掉标签
+            if corrected_segment.startswith("<note>") and corrected_segment.endswith("</note>"):
+                corrected_segment = corrected_segment[6:-7]
+            corrected_segments.append(corrected_segment)
+
+        corrected_note = "\n".join(corrected_segments)
+    else:
+        messages = [
+            {"role": "system", "content": system_message},
+            {"role": "user", "content": f"待优化文本包含在xml标签中：<note>{note}</note>"}
+        ]
+        corrected_note = get_completion_from_messages(messages, endpoint_id, api_host)
+        # 如果返回结果包含<note>和</note>标签，则去掉标签
+        if corrected_note.startswith("<note>") and corrected_note.endswith("</note>"):
+            corrected_note = corrected_note[6:-7]
+
     pyperclip.copy(corrected_note)
     print(f"处理后结果已经复制到剪贴板: {corrected_note}\n")
