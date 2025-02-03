@@ -76,7 +76,7 @@ def save_text_to_file(image_path: str, text_content: str) -> None:
         raise IOError(f"保存文本文件失败: {e}")
 
 
-def process_image_directory(directory_path: str, model: str, prompt: str) -> None:
+def process_image_directory(directory_path: str, model: str, prompt: str, skip_existing: bool = False) -> None:
     """
     批量处理指定目录下的所有图片文件
 
@@ -84,6 +84,7 @@ def process_image_directory(directory_path: str, model: str, prompt: str) -> Non
         directory_path (str): 图片目录路径
         model (str): 模型编码
         prompt (str): 提示词
+        skip_existing (bool): 是否跳过已存在对应文本文件的图片，默认为False
     """
     directory = Path(directory_path)
     if not directory.exists():
@@ -103,6 +104,12 @@ def process_image_directory(directory_path: str, model: str, prompt: str) -> Non
 
     for i, image_path in enumerate(image_files, 1):
         try:
+            # 检查对应的文本文件是否存在
+            text_file = image_path.with_suffix('.txt')
+            if skip_existing and text_file.exists():
+                print(f"\n跳过第 {i}/{len(image_files)} 个文件: {image_path.name} (文本文件已存在)")
+                continue
+
             print(f"\n处理第 {i}/{len(image_files)} 个文件: {image_path.name}")
             response = get_completion_from_messages(str(image_path), model, api_key, prompt)
             print("提取的文本内容：")
@@ -126,6 +133,8 @@ if __name__ == "__main__":
     account_path = "../account/web_accounts.json"
     model = "glm-4v-flash"  # 模型编码：glm-4v-plus-0111beta 、glm-4v-plus 、glm-4v、glm-4v-flash(免费)；
     prompt = "提取图片中的文字，但去除手机截图中的时间戳、运营商等无关信息，去除不必要的换行；仅返回图片中的文本内容，不要增加额外描述。"
+    # prompt = "提取书籍照片中的文字，注意只提取手工划线的文字，以及在页面左侧使用竖线标记范围内的段落文字；仅返回照片中的文本，不要增加额外描述。"
+
     api_key = read_account(account_path, "zhipu")
 
     # 处理单个图片
@@ -135,6 +144,6 @@ if __name__ == "__main__":
     # print(response)
     # save_text_to_file(image_path, response)
 
-    # 批量处理目录下的图片
-    directory_path = r"H:\个人图片及视频\待整理\HLTE700T相册\截屏录屏"
-    process_image_directory(directory_path, model, prompt)
+    # 批量处理目录下的图片，设置 skip_existing=True 可以跳过已有文本文件的图片
+    directory_path = r"C:\Users\Administrator\Desktop\images"
+    process_image_directory(directory_path, model, prompt, skip_existing=True)

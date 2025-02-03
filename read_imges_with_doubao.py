@@ -137,14 +137,15 @@ if __name__ == "__main__":
     # endpoint_id = "ep-20250118221957-kx6pg"         # Doubao-vision-pro-32k 视觉大模型
 
     prompt = "提取图片中的文字，但去除手机截图中的时间戳、运营商等无关信息，去除不必要的换行；仅返回图片中的文本内容，不要增加额外描述。"
+    # prompt = "提取书籍照片中的文字，注意只提取手工划线的文字，以及在页面左侧使用竖线标记范围内的段落文字；仅返回照片中的文本，不要增加额外描述。"
 
     # 处理单个图片
-    image_path = r"H:\个人图片及视频\手机截图\todo\1386073528941.jpg"
-    response = get_completion_from_messages(image_path, endpoint_id, prompt)
-    print("\n提取的文本内容：")
-    print(response)
-    save_text_to_file(image_path, response)
+    # image_path = r"H:\个人图片及视频\手机截图\todo\1386073528941.jpg"
+    # response = get_completion_from_messages(image_path, endpoint_id, prompt)
+    # print("\n提取的文本内容：")
+    # print(response)
+    # save_text_to_file(image_path, response)
 
     # 批量处理目录下的图片
-    # directory_path = r"H:\个人图片及视频\手机截图\todo"
-    # process_image_directory(directory_path, endpoint_id, prompt)
+    directory_path = r"C:\Users\Administrator\Desktop\images"
+    process_image_directory(directory_path, endpoint_id, prompt)

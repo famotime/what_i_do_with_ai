@@ -44,7 +44,7 @@ def combine_markdown_files(directory, output_file):
     output_path.write_text("\n".join(combined_content), encoding='utf-8')
 
 
-
-directory = "./md"
-output_file = "combined_output.md"
-combine_markdown_files(directory, output_file)
+if __name__ == "__main__":
+    directory = "./input"
+    output_file = "./output/combined_output.md"
+    combine_markdown_files(directory, output_file)
