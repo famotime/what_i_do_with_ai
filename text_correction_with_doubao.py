@@ -123,49 +123,14 @@ def split_long_text(text, max_length=2000):
 
     return segments
 
-if __name__ == "__main__":
-    # 火山引擎模型配置
-    # endpoint_id = "ep-20241201202141-xghlt"         # doubao-pro-4k 模型端点
-    endpoint_id = "ep-20241201202907-l6cqm"         # doubao-pro-32k-240828
-    api_host = "ark.cn-beijing.volces.com"          # 华北 2 (北京) 服务器
 
-    system_message = """
-    你是一名精通中文的语言专家，请对文本进行做语法修正，适当修改词句，按照文章含义合理拆分段落，让整体文章内容更流畅，词句更偏向书面写作风格，但所有修改要求贴合原意，不要做大的改动。
+def main(system_message, endpoint_id, api_host, note, max_length=2000):
     """
-
-    # system_message = """作为一名读书笔记整理者，请编辑调整markdown文档内容，要求：
-    # 1. 给书名加上书名号；
-    # 2. 调整文字顺序：书名 - 评分 - 作者/出版社 - 书籍图片链接；
-    # 3. 仅按上述要求编辑调整文字，其余文字不做修改或增删；
-    # 示例：original to edited
-    # <original>
-    # ## 年度图书
-    # [8.9](https://book.douban.com/subject/36593622/)
-    # ![image](images/s34705784.jpg)
-    # [世上为什么要有图书馆](https://book.douban.com/subject/36593622/)
-    # 杨素秋 / 上海译文出版社
-    # </original>
-
-    # <edited>
-    # ## 年度图书
-    # ### [《世上为什么要有图书馆》](https://book.douban.com/subject/36593622/)
-    # 杨素秋 / 上海译文出版社
-    # 豆瓣评分：8.9
-    # ![image](images/s34705784.jpg)
-
-    # <edited>
-    # """
-
-    # 按二级标题拆分markdown文件内容分批处理并保存
-    # md_file = Path(r"C:\Users\Administrator\Desktop\豆瓣2024年度读书榜单.md")
-    # notes = split_notes(md_file, "## ")
-    # save_modified_notes(md_file, notes, system_message)
-
-    # 单次处理剪贴板内容，如果剪贴板内容超过2000字，则分批处理再合并结果；截断位置为2000字范围内最近一个句号（“。”）
-    max_length = 2000
-    note = pyperclip.paste()
+    如果文本内容超过最大处理长度，则分批处理再合并结果；截断位置为长度范围内最近一个句号（“。”）
+    """
     if len(note) > max_length:
         # 分段处理长文本
+
         segments = split_long_text(note)
         corrected_segments = []
 
@@ -191,6 +156,50 @@ if __name__ == "__main__":
         # 如果返回结果包含<note>和</note>标签，则去掉标签
         if corrected_note.startswith("<note>") and corrected_note.endswith("</note>"):
             corrected_note = corrected_note[6:-7]
+    return corrected_note
 
+
+if __name__ == "__main__":
+    # 火山引擎模型配置
+    endpoint_id = "ep-20241201202141-xghlt"         # doubao-pro-4k
+    # endpoint_id = "ep-20241201202907-l6cqm"         # doubao-pro-32k-240828
+    api_host = "ark.cn-beijing.volces.com"          # 华北 2 (北京) 服务器
+
+    max_length = 1500
+    system_message = """
+    你是一名精通中文的语言专家，请对文本进行做语法修正，适当修改词句，按照文章含义合理拆分段落，让整体文章内容更流畅，词句更偏向书面写作风格，但所有修改要求贴合原意，不要做大的改动。
+    """
+
+    note = pyperclip.paste()
+    corrected_note = main(system_message, endpoint_id, api_host, note, max_length)
     pyperclip.copy(corrected_note)
     print(f"处理后结果已经复制到剪贴板: {corrected_note}\n")
+
+    # system_message = """作为一名读书笔记整理者，请编辑调整markdown文档内容，要求：
+    # 1. 给书名加上书名号；
+    # 2. 调整文字顺序：书名 - 评分 - 作者/出版社 - 书籍图片链接；
+    # 3. 仅按上述要求编辑调整文字，其余文字不做修改或增删；
+    # 示例：original to edited
+    # <original>
+    # ## 年度图书
+
+    # [8.9](https://book.douban.com/subject/36593622/)
+    # ![image](images/s34705784.jpg)
+    # [世上为什么要有图书馆](https://book.douban.com/subject/36593622/)
+    # 杨素秋 / 上海译文出版社
+    # </original>
+
+    # <edited>
+    # ## 年度图书
+    # ### [《世上为什么要有图书馆》](https://book.douban.com/subject/36593622/)
+    # 杨素秋 / 上海译文出版社
+    # 豆瓣评分：8.9
+    # ![image](images/s34705784.jpg)
+
+    # <edited>
+    # """
+
+    # 按二级标题拆分markdown文件内容分批处理并保存
+    # md_file = Path(r"C:\Users\Administrator\Desktop\豆瓣2024年度读书榜单.md")
+    # notes = split_notes(md_file, "## ")
+    # save_modified_notes(md_file, notes, system_message)
