@@ -9,6 +9,7 @@
 from pathlib import Path
 from docx import Document
 from text_correction_with_doubao import main as correct_text
+import re
 
 def extract_images(docx_path, image_dir):
     """从docx文件中提取图片并保存到指定目录，返回图片名称映射字典"""
@@ -80,6 +81,32 @@ def docx_to_markdown(docx_path, image_name_mapping):
 
     return '\n\n'.join(markdown_content)
 
+def check_and_fix_image_links(content, base_dir):
+    """检查并修复markdown中的图片链接，当图片不存在时尝试删除链接中的空格"""
+    def fix_link(match):
+        alt_text = match.group(1)
+        image_path = match.group(2)
+
+        # 检查图片链接是否存在
+        full_path = Path(base_dir) / image_path
+        if full_path.exists():
+            return f'![{alt_text}]({image_path})'
+
+        # 尝试修复：删除空格
+        print(f"图片链接：{image_path} 不存在，尝试修复……")
+        fixed_path = image_path.replace(' ', '')
+        if (Path(base_dir) / fixed_path).exists():
+            print(f"图片链接修复成功：{fixed_path}")
+            return f'![{alt_text}]({fixed_path})'
+
+        print(f"图片链接修复失败：{image_path}，未找到对应的图片文件。")
+        return f'![{alt_text}]({image_path})'
+
+    # 使用正则表达式匹配markdown图片链接格式 ![alt text](path)
+    pattern = r'!\[(.*?)\]\((.*?)\)'
+    fixed_content = re.sub(pattern, fix_link, content)
+    return fixed_content
+
 def process_files(input_dir, endpoint_id, api_host, system_message, file_type='docx', skip_existing=False):
     """
     处理指定目录下的docx或md文件
@@ -126,9 +153,14 @@ def process_files(input_dir, endpoint_id, api_host, system_message, file_type='d
                 print("- 优化文本内容...")
                 optimized_content = correct_text(system_message, endpoint_id, api_host, markdown_content, max_length=1500)
 
+                # 增加对AI优化后内容中markdown图片链接的检查，如果图片链接中未找到对应的图片文件，则尝试通过删除链接中的空格来修复
+                base_dir = docx_file.parent
+                optimized_content = check_and_fix_image_links(optimized_content, base_dir)
+
                 output_path.write_text(optimized_content, encoding='utf-8')
                 print(f"✓ 完成 ({index}/{total_files}) - 已保存到: {output_path}")
                 processed_count += 1
+
             except Exception as e:
                 print(f"× 处理失败: {str(e)}")
 
@@ -181,11 +213,11 @@ if __name__ == "__main__":
     system_message = """
     你是一名精通中文的语言专家，请对文本进行语法修正，适当修改词句，按照文章含义合理拆分段落，
     让整体文章内容更流畅，词句更偏向书面写作风格，但所有修改要求贴合原意，不要做大的改动。
-    请保持markdown格式的图片链接不变。
+    对markdown格式的图片链接内容，不要做任何修改。
     """
 
     # 设置输入目录和文件类型
-    input_dir = r"D:\小汤汁茶馆知识星球哈\精华内容2019.8-2024.10（花了我兼职88元！呜呜）\1  精华中的精华哈"
+    input_dir = r"D:\小汤汁茶馆知识星球哈\精华内容2019.8-2024.10（花了我兼职88元！呜呜）"
     file_type = "docx"  # 或 "md"
     skip_existing = True  # 是否跳过已存在的文件
 
