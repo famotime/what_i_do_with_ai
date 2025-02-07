@@ -161,6 +161,7 @@ def main(system_message, endpoint_id, api_host, note, max_length=2000):
 
 if __name__ == "__main__":
     # 火山引擎模型配置
+    # endpoint_id = "ep-20250207200354-zc5jl"         # doubao-lite-4k
     endpoint_id = "ep-20241201202141-xghlt"         # doubao-pro-4k
     # endpoint_id = "ep-20241201202907-l6cqm"         # doubao-pro-32k-240828
     api_host = "ark.cn-beijing.volces.com"          # 华北 2 (北京) 服务器

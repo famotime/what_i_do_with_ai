@@ -109,8 +109,7 @@ def check_and_fix_image_links(content, base_dir):
 
 def process_files(input_dir, endpoint_id, api_host, system_message, file_type='docx', skip_existing=False):
     """
-    处理指定目录下的docx或md文件
-
+    处理指定目录下的docx或md文件（先处理文件名中的空格）
     Args:
         input_dir (str): 输入目录路径
         endpoint_id (str): 火山引擎模型端点ID
@@ -121,11 +120,29 @@ def process_files(input_dir, endpoint_id, api_host, system_message, file_type='d
     """
     input_dir = Path(input_dir)
 
+    def remove_spaces_from_filename(file_path):
+        """去除文件名中的空格"""
+        if ' ' not in file_path.name:
+            return file_path
+
+        new_path = file_path.parent / file_path.name.replace(' ', '')
+        try:
+            file_path.rename(new_path)
+            print(f"文件重命名成功: {file_path} -> {new_path}")
+            return new_path
+        except Exception as e:
+            print(f"文件重命名失败: {str(e)}")
+            return file_path
+
     # 根据文件类型选择处理方式
     if file_type.lower() == 'docx':
         # 获取所有docx文件列表，排除临时文件(~$开头)和包含"_combined"的文件
         docx_files = [f for f in input_dir.rglob('*.docx')
                      if '_combined' not in f.stem and not f.stem.startswith('~$')]
+
+        # 先处理所有文件名中的空格
+        docx_files = [remove_spaces_from_filename(f) for f in docx_files]
+
         total_files = len(docx_files)
         print(f"\n共找到 {total_files} 个docx文件待处理")
 
@@ -167,6 +184,10 @@ def process_files(input_dir, endpoint_id, api_host, system_message, file_type='d
     elif file_type.lower() == 'md':
         # 获取所有md文件列表，排除包含"_combined"的文件
         md_files = [f for f in input_dir.rglob('*.md') if '_combined' not in f.stem]
+
+        # 先处理所有文件名中的空格
+        md_files = [remove_spaces_from_filename(f) for f in md_files]
+
         total_files = len(md_files)
         print(f"\n共找到 {total_files} 个md文件待处理")
 
@@ -206,6 +227,7 @@ def process_files(input_dir, endpoint_id, api_host, system_message, file_type='d
 
 if __name__ == "__main__":
     # 火山引擎模型配置
+    # endpoint_id = "ep-20250207200354-zc5jl"         # doubao-lite-4k
     endpoint_id = "ep-20241201202141-xghlt"  # doubao-pro-4k
     api_host = "ark.cn-beijing.volces.com"   # 华北 2 (北京) 服务器
 
@@ -217,7 +239,7 @@ if __name__ == "__main__":
     """
 
     # 设置输入目录和文件类型
-    input_dir = r"D:\小汤汁茶馆知识星球哈\精华内容2019.8-2024.10（花了我兼职88元！呜呜）"
+    input_dir = r"D:\小汤汁茶馆知识星球"
     file_type = "docx"  # 或 "md"
     skip_existing = True  # 是否跳过已存在的文件
 

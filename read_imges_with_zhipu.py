@@ -145,5 +145,5 @@ if __name__ == "__main__":
     # save_text_to_file(image_path, response)
 
     # 批量处理目录下的图片，设置 skip_existing=True 可以跳过已有文本文件的图片
-    directory_path = r"C:\Users\Administrator\Desktop\images"
+    directory_path = r"D:\小汤汁茶馆知识星球\精华内容2024.11\tmp"
     process_image_directory(directory_path, model, prompt, skip_existing=True)
