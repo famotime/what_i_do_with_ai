@@ -1,0 +1,20 @@
+{
+  "main": "index.html",
+  "logo": "logo.png",
+  "preload": "preload.js",
+  "features": [
+    {
+      "code": "switch_mouse",
+      "explain": "切换鼠标左右键",
+      "cmds": ["鼠标切换", "切换鼠标", "mouse switch", "左右", "zy", "lr"],
+      "mode": "none"
+    }
+  ],
+  "development": {
+    "main": "index.html"
+  },
+  "pluginSetting": {
+    "single": true,
+    "height": 300
+  }
+}
