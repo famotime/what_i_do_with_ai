@@ -6,7 +6,7 @@
     {
       "code": "switch_mouse",
       "explain": "切换鼠标左右键",
-      "cmds": ["鼠标切换", "切换鼠标", "mouse switch", "左右", "zy", "lr"],
+      "cmds": ["鼠标切换", "mouse switch", "左右", "zy", "lr"],
       "mode": "none"
     }
   ],
@@ -16,5 +16,12 @@
   "pluginSetting": {
     "single": true,
     "height": 300
+  },
+  "options": {
+    "autoSwitch": {
+      "type": "boolean",
+      "label": "运行时立即切换",
+      "default": false
+    }
   }
 }
