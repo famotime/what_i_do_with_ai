@@ -239,8 +239,8 @@ if __name__ == "__main__":
     """
 
     # 设置输入目录和文件类型
-    input_dir = r"D:\小汤汁茶馆知识星球"
-    file_type = "docx"  # 或 "md"
+    input_dir = r"D:\小汤汁茶馆知识星球\小汤质框架梳理\《写作学》马正平"
+    file_type = "docx"  # "docx" 或 "md"
     skip_existing = True  # 是否跳过已存在的文件
 
     # 处理文件
