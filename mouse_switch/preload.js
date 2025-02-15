@@ -155,16 +155,20 @@ window.exports = {
 
         // 更新按钮显示状态
         const switchButton = document.getElementById('switchButton');
+        const manualTip = document.getElementById('manualTip');
         if (switchButton) {
           switchButton.style.display = autoSwitch ? 'none' : 'block';
+        }
+        if (manualTip) {
+          manualTip.style.display = autoSwitch ? 'none' : 'block';
         }
 
         // 更新配置提示显示
         const configTip = document.getElementById('configTip');
         if (configTip) {
           configTip.textContent = autoSwitch ?
-            '提示：当前为自动切换模式，可在设置中关闭' :
-            '提示：可在设置中开启"自动切换"功能';
+            '已勾选自动切换模式，每次运行自动切换左右键' :
+            '当前为手动切换模式，可勾选开启"自动切换"模式';
         }
       },
       switchMouse: switchMouseButtons
