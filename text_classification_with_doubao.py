@@ -133,7 +133,7 @@ def save_organized_notes(txt_file, notes, system_message):
         content += "\n"
 
     now = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    organized_notes_file = txt_file.parent / f"organized_notes_{now}.md"
+    organized_notes_file = txt_file.parent / f"output / organized_notes_{now}.md"
     with open(organized_notes_file, "w", encoding="utf-8") as f:
         f.write(content)
 
@@ -147,6 +147,6 @@ if __name__ == "__main__":
     请只输出类别，不要输出其他内容。
     """
 
-    txt_file = Path(r"D:\Python_Work\AI\original_notes.txt")
+    txt_file = Path(r".\input\original_notes.txt")
     notes = split_notes(txt_file, "%%%")
     save_organized_notes(txt_file, notes, system_message)
