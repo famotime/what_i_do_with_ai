@@ -120,7 +120,107 @@ def center_object(image, target_size=None, fit_mode='contain', padding_ratio=0.1
     return centered_image
 
 
-def remove_background_and_center(input_path, output_path, target_size=None, fit_mode='contain', padding_ratio=0.1):
+def remove_background_by_color(image, target_color=(0, 0, 0), tolerance=30, edge_smooth=True):
+    """
+    基于颜色容限去除背景
+    Args:
+        image: PIL图像对象
+        target_color: 目标背景颜色 (R, G, B)，默认为黑色
+        tolerance: 颜色容限 (0-255)，数值越大容限越大
+        edge_smooth: 是否对边缘进行平滑处理
+    Returns:
+        去除背景后的RGBA图像
+    """
+    if image.mode != 'RGB':
+        image = image.convert('RGB')
+
+    # 转换为numpy数组处理
+    img_array = np.array(image)
+    height, width, channels = img_array.shape
+
+    # 计算每个像素与目标颜色的欧几里得距离
+    target_color = np.array(target_color)
+    diff = img_array - target_color
+    distances = np.sqrt(np.sum(diff ** 2, axis=2))
+
+    # 创建alpha通道
+    alpha = np.ones((height, width), dtype=np.uint8) * 255
+
+    if edge_smooth and tolerance > 0:
+        # 平滑边缘：在容限范围内使用渐变透明度
+        smooth_zone = tolerance * 0.3  # 平滑区域为容限的30%
+
+        # 完全透明区域
+        alpha[distances <= tolerance - smooth_zone] = 0
+
+        # 渐变区域
+        gradient_mask = (distances > tolerance - smooth_zone) & (distances <= tolerance + smooth_zone)
+        if np.any(gradient_mask):
+            gradient_distances = distances[gradient_mask]
+            # 计算渐变透明度
+            gradient_alpha = ((gradient_distances - (tolerance - smooth_zone)) / (2 * smooth_zone)) * 255
+            gradient_alpha = np.clip(gradient_alpha, 0, 255).astype(np.uint8)
+            alpha[gradient_mask] = gradient_alpha
+    else:
+        # 简单的阈值处理
+        alpha[distances <= tolerance] = 0
+
+    # 创建RGBA图像
+    rgba_array = np.zeros((height, width, 4), dtype=np.uint8)
+    rgba_array[:, :, :3] = img_array
+    rgba_array[:, :, 3] = alpha
+
+    return Image.fromarray(rgba_array, 'RGBA')
+
+
+def calculate_color_distance(color1, color2):
+    """计算两个颜色之间的欧几里得距离"""
+    return np.sqrt(sum([(c1 - c2) ** 2 for c1, c2 in zip(color1, color2)]))
+
+
+def auto_detect_background_color(image, sample_size=50):
+    """
+    自动检测背景颜色（基于图像四个角落的像素）
+    Args:
+        image: PIL图像对象
+        sample_size: 采样区域大小
+    Returns:
+        检测到的背景颜色 (R, G, B)
+    """
+    if image.mode != 'RGB':
+        image = image.convert('RGB')
+
+    width, height = image.size
+    sample_size = min(sample_size, width // 4, height // 4)
+
+    # 采样四个角落
+    corners = [
+        (0, 0, sample_size, sample_size),  # 左上
+        (width - sample_size, 0, width, sample_size),  # 右上
+        (0, height - sample_size, sample_size, height),  # 左下
+        (width - sample_size, height - sample_size, width, height)  # 右下
+    ]
+
+    corner_colors = []
+    for corner in corners:
+        crop = image.crop(corner)
+        # 获取该区域的主要颜色
+        colors = crop.getcolors(maxcolors=256*256*256)
+        if colors:
+            # 选择出现最频繁的颜色
+            most_common_color = max(colors, key=lambda x: x[0])[1]
+            corner_colors.append(most_common_color)
+
+    if corner_colors:
+        # 计算平均颜色
+        avg_color = tuple(int(sum(c[i] for c in corner_colors) / len(corner_colors)) for i in range(3))
+        return avg_color
+
+    return (0, 0, 0)  # 默认返回黑色
+
+
+def remove_background_and_center(input_path, output_path, target_size=None, fit_mode='contain', padding_ratio=0.1,
+                                use_color_removal=False, target_color=None, color_tolerance=30, edge_smooth=True, auto_detect_bg=False):
     """
     去除背景并将主体居中
     Args:
@@ -129,15 +229,37 @@ def remove_background_and_center(input_path, output_path, target_size=None, fit_
         target_size: 目标尺寸 (width, height)
         fit_mode: 适应模式
         padding_ratio: 边距比例
+        use_color_removal: 是否使用颜色去除而不是rembg
+        target_color: 目标背景颜色 (R, G, B)，默认为黑色
+        color_tolerance: 颜色容限 (0-255)
+        edge_smooth: 是否对边缘进行平滑处理
+        auto_detect_bg: 是否自动检测背景颜色
     """
     try:
         print(f"正在处理: {input_path.name}")
-        with open(input_path, 'rb') as f:
-            input_data = f.read()
 
-        print("  去除背景中...")
-        output_data = remove(input_data)
-        image = Image.open(io.BytesIO(output_data))
+        if use_color_removal:
+            # 使用颜色去除方法
+            print("  使用颜色容限去除背景...")
+            image = Image.open(input_path)
+
+            if auto_detect_bg:
+                detected_color = auto_detect_background_color(image)
+                print(f"  自动检测的背景颜色: RGB{detected_color}")
+                target_color = detected_color
+            elif target_color is None:
+                target_color = (0, 0, 0)  # 默认黑色
+
+            print(f"  目标背景颜色: RGB{target_color}, 容限: {color_tolerance}")
+            image = remove_background_by_color(image, target_color, color_tolerance, edge_smooth)
+        else:
+            # 使用rembg方法
+            print("  使用AI模型去除背景...")
+            with open(input_path, 'rb') as f:
+                input_data = f.read()
+            output_data = remove(input_data)
+            image = Image.open(io.BytesIO(output_data))
+
         print(f"  原始尺寸: {image.width}x{image.height}")
 
         print("  居中处理中...")
@@ -150,7 +272,8 @@ def remove_background_and_center(input_path, output_path, target_size=None, fit_
         print(f"✗ 处理 {input_path} 时出错: {str(e)}\n")
 
 
-def process_single_file(input_file, output_dir=None, target_size=None, fit_mode='contain', padding_ratio=0.1):
+def process_single_file(input_file, output_dir=None, target_size=None, fit_mode='contain', padding_ratio=0.1,
+                       use_color_removal=False, target_color=None, color_tolerance=30, edge_smooth=True, auto_detect_bg=False):
     input_path = Path(input_file)
     if not input_path.exists():
         print(f"文件不存在: {input_path}")
@@ -165,10 +288,12 @@ def process_single_file(input_file, output_dir=None, target_size=None, fit_mode=
         output_path = output_dir / f"{input_path.stem}_no_bg_centered.png"
     else:
         output_path = input_path.parent / f"{input_path.stem}_no_bg_centered.png"
-    remove_background_and_center(input_path, output_path, target_size, fit_mode, padding_ratio)
+    remove_background_and_center(input_path, output_path, target_size, fit_mode, padding_ratio,
+                                use_color_removal, target_color, color_tolerance, edge_smooth, auto_detect_bg)
 
 
-def process_directory(input_dir, output_dir=None, target_size=None, fit_mode='contain', padding_ratio=0.1):
+def process_directory(input_dir, output_dir=None, target_size=None, fit_mode='contain', padding_ratio=0.1,
+                     use_color_removal=False, target_color=None, color_tolerance=30, edge_smooth=True, auto_detect_bg=False):
     input_path = Path(input_dir)
     if not input_path.exists() or not input_path.is_dir():
         print(f"目录不存在: {input_path}")
@@ -210,7 +335,8 @@ def process_directory(input_dir, output_dir=None, target_size=None, fit_mode='co
             print(f"跳过已存在的文件: {output_file.name}")
             continue
 
-        remove_background_and_center(img_file, output_file, target_size, fit_mode, padding_ratio)
+        remove_background_and_center(img_file, output_file, target_size, fit_mode, padding_ratio,
+                                   use_color_removal, target_color, color_tolerance, edge_smooth, auto_detect_bg)
 
 
 def main():
@@ -236,18 +362,45 @@ def main():
     # 边距比例 (0.0-0.5)，0.1表示10%的边距
     padding_ratio = 0.1
 
+    # ============ 新增：颜色去除配置 ============
+    # 是否使用颜色去除（而不是AI模型rembg）
+    use_color_removal = True  # 设为True启用颜色去除功能
+
+    # 目标背景颜色 (R, G, B)，None则使用自动检测或默认黑色
+    target_color = (0, 0, 0)  # 黑色，可以修改为其他颜色如 (255, 255, 255) 白色
+
+    # 颜色容限 (0-255)，数值越大容限越大，能去除更多相近颜色
+    color_tolerance = 50  # 推荐值：30-80，可根据效果调整
+
+    # 是否对边缘进行平滑处理（减少锯齿）
+    edge_smooth = True
+
+    # 是否自动检测背景颜色（基于图像四角）
+    auto_detect_bg = False  # 设为True会自动检测背景颜色
+
     # ========================================
 
     input_path_obj = Path(input_path)
     if input_path_obj.is_file():
         print(f"处理单个文件: {input_path}")
-        process_single_file(input_path, output_dir, target_size, fit_mode, padding_ratio)
+        if use_color_removal:
+            print(f"使用颜色去除模式 - 目标颜色: RGB{target_color}, 容限: {color_tolerance}")
+        else:
+            print("使用AI模型去除背景")
+        process_single_file(input_path, output_dir, target_size, fit_mode, padding_ratio,
+                           use_color_removal, target_color, color_tolerance, edge_smooth, auto_detect_bg)
     elif input_path_obj.is_dir():
         print(f"处理目录: {input_path}")
-        process_directory(input_path, output_dir, target_size, fit_mode, padding_ratio)
+        if use_color_removal:
+            print(f"使用颜色去除模式 - 目标颜色: RGB{target_color}, 容限: {color_tolerance}")
+        else:
+            print("使用AI模型去除背景")
+        process_directory(input_path, output_dir, target_size, fit_mode, padding_ratio,
+                         use_color_removal, target_color, color_tolerance, edge_smooth, auto_detect_bg)
     else:
         print(f"输入路径无效: {input_path}")
         print("请在main()函数中修改 input_path 变量")
+
 
 if __name__ == "__main__":
     main()
