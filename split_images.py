@@ -33,7 +33,7 @@ def main(input_path: Path, output_dir: Path, grid: int):
 
 
 if __name__ == '__main__':
-    input_path = Path('../images')
+    input_path = Path('./input/poses')
     output_dir = input_path / 'icons'
     grid = 4  # 网格数N*N
     main(input_path, output_dir, grid)
