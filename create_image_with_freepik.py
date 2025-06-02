@@ -3,9 +3,15 @@
 
 ## 功能特性
 
-### 支持的参数
+### 🎯 核心功能
+- **单次生成**: 支持1-4张图片的单次生成
+- **批量生成**: 自动支持4张以上图片的批量生成，突破API单次限制
+- **智能分批**: 当请求超过4张图片时，自动分批处理，每批最多4张
+- **文件命名**: 批量生成时自动使用统一的序号命名（001, 002, 003...）
+
+### 📋 支持的参数
 - **prompt**: 图片描述文本
-- **num_images**: 生成图片数量 (1-4)
+- **num_images**: 生成图片数量 (无限制，自动批量处理)
 - **aspect_ratio**: 长宽比
   - `square_1_1`: 正方形 1:1
   - `social_story_9_16`: 社交故事 9:16
@@ -13,7 +19,7 @@
   - `traditional_3_4`: 传统 3:4
   - `classic_4_3`: 经典 4:3
 
-### 风格选项
+### 🎨 风格选项
 - **style**: 风格类型
   - `photo`: 照片风格
   - `anime`: 动漫风格
@@ -21,7 +27,7 @@
   - `illustration`: 插画风格
   - 等等
 
-### 效果选项
+### ✨ 效果选项
 - **color**: 颜色效果
   - `b&w`: 黑白
   - `pastel`: 粉彩
@@ -70,14 +76,46 @@
   - `fish-eye`: 鱼眼
   - `first-person`: 第一人称视角
 
+## 📁 输出文件
 
-## 输出文件
-
-生成的图片默认保存在 `output/` 目录下，文件名格式为：
-```
-freepik_imagen3_{timestamp}_{序号}.{扩展名}
-```
+### 单次生成 (1-4张)
+文件名格式：`freepik_imagen3_{timestamp}_{序号}.{扩展名}`
 例如：`freepik_imagen3_1703123456_1.jpg`
+
+### 批量生成 (5张及以上)
+文件名格式：`freepik_imagen3_{timestamp}_{全局序号:03d}.{扩展名}`
+例如：
+```
+freepik_imagen3_1703123456_001.jpg
+freepik_imagen3_1703123457_002.jpg
+freepik_imagen3_1703123458_003.jpg
+...
+freepik_imagen3_1703123470_010.jpg
+```
+
+## 🚀 使用示例
+
+### 基础使用
+```python
+generator = FreepikImageGenerator()
+files = generator.generate_and_download(
+    prompt="美丽的风景照片",
+    num_images=4
+)
+```
+
+### 批量生成（自动分批）
+```python
+generator = FreepikImageGenerator()
+files = generator.generate_and_download(
+    prompt="城市建筑摄影",
+    num_images=12,  # 自动分为3批，每批4张
+    style="photo",
+    aspect_ratio="widescreen_16_9"
+)
+```
+
+生成的图片默认保存在 `output/` 目录下。
 
 """
 
@@ -413,10 +451,116 @@ class FreepikImageGenerator:
 
         return downloaded_files
 
+    def generate_and_download_batch(
+        self,
+        prompt: str,
+        output_dir: str = "output",
+        total_images: int = 1,
+        **kwargs
+    ) -> List[Path]:
+        """
+        批量生成图片并下载到本地（支持超过4张图片）
+
+        Args:
+            prompt: 图片描述文本
+            output_dir: 输出目录
+            total_images: 总图片数量（不限制数量）
+            **kwargs: 其他创建图片的参数
+
+        Returns:
+            下载的图片文件路径列表
+        """
+        print(f"=== 批量图片生成流程 ===")
+        print(f"总共需要生成 {total_images} 张图片")
+
+        # API单次最多支持4张图片
+        max_per_batch = 4
+        batches = []
+
+        # 计算需要的批次
+        for i in range(0, total_images, max_per_batch):
+            batch_size = min(max_per_batch, total_images - i)
+            batches.append({
+                'batch_num': len(batches) + 1,
+                'start_index': i + 1,
+                'batch_size': batch_size
+            })
+
+        print(f"将分 {len(batches)} 个批次处理:")
+        for batch in batches:
+            print(f"  批次 {batch['batch_num']}: 生成 {batch['batch_size']} 张图片 (第{batch['start_index']}-{batch['start_index'] + batch['batch_size'] - 1}张)")
+
+        all_downloaded_files = []
+
+        for batch_info in batches:
+            batch_num = batch_info['batch_num']
+            batch_size = batch_info['batch_size']
+            start_index = batch_info['start_index']
+
+            print(f"\n=== 处理批次 {batch_num}/{len(batches)} ===")
+            print(f"正在生成第 {start_index}-{start_index + batch_size - 1} 张图片...")
+
+            try:
+                # 生成当前批次的图片
+                batch_files = self.generate_and_download(
+                    prompt=prompt,
+                    output_dir=output_dir,
+                    num_images=batch_size,
+                    **kwargs
+                )
+
+                # 重命名文件以包含全局序号
+                renamed_files = []
+                for i, file_path in enumerate(batch_files):
+                    global_index = start_index + i
+                    # 获取原文件的扩展名和时间戳
+                    original_name = file_path.name
+                    # 提取时间戳和扩展名
+                    parts = original_name.split('_')
+                    if len(parts) >= 3:
+                        timestamp = parts[2]
+                        ext = Path(original_name).suffix
+                        new_name = f"freepik_imagen3_{timestamp}_{global_index:03d}{ext}"
+                    else:
+                        # 备用命名方案
+                        timestamp = int(time.time())
+                        ext = file_path.suffix
+                        new_name = f"freepik_imagen3_{timestamp}_{global_index:03d}{ext}"
+
+                    new_path = file_path.parent / new_name
+
+                    # 重命名文件
+                    try:
+                        file_path.rename(new_path)
+                        renamed_files.append(new_path)
+                        print(f"  ✓ 重命名: {file_path.name} -> {new_name}")
+                    except Exception as e:
+                        print(f"  ⚠️ 重命名失败，保持原名: {e}")
+                        renamed_files.append(file_path)
+
+                all_downloaded_files.extend(renamed_files)
+                print(f"✓ 批次 {batch_num} 完成，已生成 {len(batch_files)} 张图片")
+
+                # 如果不是最后一个批次，稍等一下避免API限流
+                if batch_num < len(batches):
+                    print(f"等待 3 秒后处理下一批次...")
+                    time.sleep(3)
+
+            except Exception as e:
+                print(f"❌ 批次 {batch_num} 失败: {e}")
+                print("继续处理下一批次...")
+                continue
+
+        print(f"\n=== 批量生成完成 ===")
+        print(f"总共成功生成 {len(all_downloaded_files)} 张图片")
+
+        return all_downloaded_files
+
     def generate_and_download(
         self,
         prompt: str,
         output_dir: str = "output",
+        num_images: int = 1,
         **kwargs
     ) -> List[Path]:
         """
@@ -425,15 +569,26 @@ class FreepikImageGenerator:
         Args:
             prompt: 图片描述文本
             output_dir: 输出目录
+            num_images: 生成图片数量（如果超过4张，会自动调用批量生成）
             **kwargs: 其他创建图片的参数
 
         Returns:
             下载的图片文件路径列表
         """
+        # 如果请求超过4张图片，自动使用批量生成
+        if num_images > 4:
+            print(f"请求生成 {num_images} 张图片，超过单次限制（4张），自动启用批量生成模式")
+            return self.generate_and_download_batch(
+                prompt=prompt,
+                output_dir=output_dir,
+                total_images=num_images,
+                **kwargs
+            )
+
         print(f"=== 开始图片生成流程 ===")
 
         # 创建图片生成任务
-        result = self.create_image(prompt, **kwargs)
+        result = self.create_image(prompt, num_images=num_images, **kwargs)
 
         if not result:
             raise Exception("API返回空响应")
@@ -465,7 +620,7 @@ class FreepikImageGenerator:
         return downloaded_files
 
 
-def main():
+def main(prompt, num_images, aspect_ratio, style, color, lightning, framing, output_dir):
     """主函数示例"""
     try:
         print("=== Freepik Imagen3 图片生成器 ===")
@@ -473,19 +628,17 @@ def main():
         # 初始化生成器
         generator = FreepikImageGenerator()
 
-        # 示例：生成图片
-        prompt = "中国年轻女性在著名旅游景点的单人照片，时尚休闲风格"
-
         print("开始生成图片...")
+        # 修复参数传递方式 - 除了prompt和output_dir，其他参数通过关键字参数传递
         downloaded_files = generator.generate_and_download(
-            prompt=prompt,  # 必填，图片描述文本
-            num_images=1,  # 可选，生成图片数量，默认1
-            aspect_ratio="traditional_3_4",  # 可选，长宽比，支持：'square_1_1', 'social_story_9_16', 'widescreen_16_9', 'traditional_3_4', 'classic_4_3'
-            style="photo",  # 可选，风格：photo, anime, digital_art, illustration等
-            # color="vibrant",  # 可选，颜色效果：b&w, pastel, sepia, dramatic, vibrant, orange&teal等
-            # lightning="golden-hour",  # 可选，光照：studio, warm, cinematic, volumetric, golden-hour等
-            framing="portrait",  # 可选，构图：portrait, macro, panoramic, aerial-view, close-up等
-            # output_dir="output"  # 可选，输出目录，默认output
+            prompt=prompt,
+            output_dir=output_dir or "output",
+            num_images=num_images,
+            aspect_ratio=aspect_ratio,
+            style=style,
+            color=color,
+            lightning=lightning,
+            framing=framing
         )
 
         print(f"\n🎉 成功生成并下载了 {len(downloaded_files)} 张图片:")
@@ -509,4 +662,14 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    # 修复参数设置方式
+    prompt = "中国年轻女性在著名旅游景点的单人照片，时尚休闲风格"  # 必填，图片描述文本
+    num_images = 8  # 可选，生成图片数量，默认1，超过4张会自动启用分批生成
+    aspect_ratio = "traditional_3_4"  # 可选，长宽比，支持：'square_1_1', 'social_story_9_16', 'widescreen_16_9', 'traditional_3_4', 'classic_4_3'
+    style = "photo"  # 可选，风格：photo, anime, digital_art, illustration等
+    color = None  # 可选，颜色效果：b&w, pastel, sepia, dramatic, vibrant, orange&teal等
+    lightning = None  # 可选，光照：studio, warm, cinematic, volumetric, golden-hour等
+    framing = "portrait"  # 可选，构图：portrait, macro, panoramic, aerial-view, close-up等
+    output_dir = "output"  # 可选，输出目录，默认output
+
+    main(prompt, num_images, aspect_ratio, style, color, lightning, framing, output_dir)
