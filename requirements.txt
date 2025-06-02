@@ -1,3 +1,6 @@
 rembg==2.0.57
 Pillow>=9.0.0
 numpy>=1.21.0
+requests>=2.25.0
+python-dotenv>=0.19.0
+pathlib
