@@ -4,9 +4,10 @@
 ## 功能描述
 1. 批量读取指定目录下的图片文件；
 2. 调用GLM视觉大模型，根据图片文本输出标题和完整正文；
-3. 将输出标题增加到图片文件名，如：“20250101-123456_Chrome.png”，更新为“20250101-123456_Chrome -- 标题.png”；
-4. 将输出正文保存到同名的markdown文件中，如：“20250101-123456_Chrome -- 标题.md”；
-5. 返回批量处理统计结果。
+3. 将输出标题增加到图片文件名，如："20250101-123456_Chrome.png"，更新为"20250101-123456_Chrome -- 标题.png"；
+4. 将输出正文保存到同名的markdown文件中，如："20250101-123456_Chrome -- 标题.md"；
+5. 智能跳过数据量过大的图片文件，避免API调用失败；
+6. 返回批量处理统计结果。
 
 ## 参考信息
 1. GLM大模型API文档：GLM大模型API文档.md、GLM文件API文档.md；
@@ -28,6 +29,7 @@ import aiohttp
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from threading import Semaphore
 from dotenv import load_dotenv
+from PIL import Image
 
 # 配置日志
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -39,7 +41,7 @@ class GLMImageProcessor:
                  base_url: str = "https://open.bigmodel.cn/api/paas/v4/chat/completions",
                  files_url: str = "https://open.bigmodel.cn/api/paas/v4/files",
                  max_requests_per_second: float = 2.0,
-                 max_tokens=1024, temperature=0.95):
+                 max_tokens=1024, temperature=0.95, enable_token_estimation=True):
         """
         初始化GLM图片处理器
         
@@ -50,6 +52,9 @@ class GLMImageProcessor:
             base_url: 对话API基础URL
             files_url: 文件上传API基础URL
             max_requests_per_second: 每秒最大请求数
+            max_tokens: 最大token数
+            temperature: 温度参数
+            enable_token_estimation: 是否启用token预估功能
         """
         self.api_key = api_key
         self.model = model
@@ -59,6 +64,7 @@ class GLMImageProcessor:
         self.max_requests_per_second = max_requests_per_second
         self.max_tokens = max_tokens
         self.temperature = temperature
+        self.enable_token_estimation = enable_token_estimation
         self.headers = {
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json"
@@ -125,6 +131,24 @@ class GLMImageProcessor:
             if 'files' in locals():
                 files['file'][1].close()
     
+    def get_image_dimensions(self, image_path: Path) -> Tuple[int, int]:
+        """
+        获取图片的宽度和高度
+        
+        Args:
+            image_path: 图片文件路径
+            
+        Returns:
+            (宽度, 高度) 元组
+        """
+        try:
+            with Image.open(image_path) as img:
+                return img.size  # 返回 (width, height)
+        except Exception as e:
+            logger.error(f"获取图片尺寸失败 {image_path}: {str(e)}")
+            # 如果无法获取尺寸，返回默认值
+            return (1024, 1024)
+    
     def encode_image_to_base64(self, image_path: Path) -> str:
         """
         将图片文件编码为base64字符串
@@ -142,6 +166,62 @@ class GLMImageProcessor:
             logger.error(f"编码图片失败 {image_path}: {str(e)}")
             raise
     
+    def estimate_token_count(self, image_path: Path, prompt: str) -> int:
+        """
+        基于图片像素尺寸估算请求数据的token数量
+        
+        这个函数用于在调用API之前估算请求的token数量，避免因数据量过大导致API调用失败。
+        当估算的token数量超过max_tokens的80%时，会跳过该文件的处理。
+        
+        估算逻辑：
+        1. 图片会被缩放到一定分辨率范围内，并分割成512×512像素块
+        2. 每个512×512像素块大约消耗170个tokens
+        3. 基础token数为85个
+        4. 文本内容按1:3比例估算（3个字符约等于1个token）
+        
+        示例计算：
+        - 1024×1024图片：2×2=4块 → 4×170+85=765 tokens
+        - 2048×4096图片：4×8=32块 → 32×170+85=5525 tokens
+        
+        Args:
+            image_path: 图片文件路径
+            prompt: 提示词文本
+            
+        Returns:
+            估算的token数量
+        """
+        try:
+            # 获取图片尺寸
+            width, height = self.get_image_dimensions(image_path)
+            
+            # 计算文本部分的token数
+            text_tokens = len(prompt) // 3  # 保守估算：3个字符约等于1个token
+            
+            # 计算图片的token数
+            # 图片会被分割成512×512的像素块
+            block_size = 512
+            blocks_width = (width + block_size - 1) // block_size  # 向上取整
+            blocks_height = (height + block_size - 1) // block_size  # 向上取整
+            total_blocks = blocks_width * blocks_height
+            
+            # 每个512×512像素块大约消耗170个tokens
+            tokens_per_block = 170
+            image_tokens = total_blocks * tokens_per_block
+            
+            # 基础token数（系统开销）
+            base_tokens = 85
+            
+            total_tokens = text_tokens + image_tokens + base_tokens
+            
+            logger.debug(f"图片 {image_path.name}: {width}×{height} -> {blocks_width}×{blocks_height} 块 -> {total_blocks} 块 -> {image_tokens} tokens")
+            
+            return total_tokens
+            
+        except Exception as e:
+            logger.error(f"估算token数量失败 {image_path}: {str(e)}")
+            # 如果估算失败，返回一个较大的保守值
+            return self.max_tokens
+    
     def call_glm_api(self, image_path: Path) -> Optional[Dict[str, str]]:
         """
         调用GLM视觉模型API分析图片
@@ -158,6 +238,15 @@ class GLMImageProcessor:
             
             # 所有模型都使用base64编码
             base64_image = self.encode_image_to_base64(image_path)
+            
+            # 预处理：检查数据大小是否接近max_tokens（如果启用了token预估）
+            if self.enable_token_estimation:
+                estimated_tokens = self.estimate_token_count(image_path, self.prompt)
+                token_threshold = self.max_tokens * 0.8  # 当估算token数达到max_tokens的80%时跳过
+                
+                if estimated_tokens > token_threshold:
+                    logger.warning(f"跳过处理 {image_path.name}: 估算token数 {estimated_tokens} 接近max_tokens {self.max_tokens} (阈值: {token_threshold})")
+                    return None
             
             # 构建请求数据（使用base64）
             data = {
@@ -531,7 +620,8 @@ class GLMImageProcessor:
 
 class ImageBatchProcessor:
     def __init__(self, source_dir: str, api_key: str, model: str = "glm-4v-flash", 
-                 prompt: str = "", max_workers: int = 4, max_requests_per_second: float = 2.0, max_tokens=1024, temperature=0.95):
+                 prompt: str = "", max_workers: int = 4, max_requests_per_second: float = 2.0, 
+                 max_tokens=1024, temperature=0.95, enable_token_estimation=True):
         """
         初始化批量图片处理器
         
@@ -542,13 +632,17 @@ class ImageBatchProcessor:
             prompt: 提示词
             max_workers: 最大并发工作线程数
             max_requests_per_second: 每秒最大请求数
+            max_tokens: 最大token数
+            temperature: 温度参数
+            enable_token_estimation: 是否启用token预估功能
         """
         self.source_dir = Path(source_dir)
         self.max_workers = max_workers
         self.processor = GLMImageProcessor(api_key, model, prompt, 
                                          max_requests_per_second=max_requests_per_second,
                                          max_tokens=max_tokens,
-                                         temperature=temperature)
+                                         temperature=temperature,
+                                         enable_token_estimation=enable_token_estimation)
         
         if not self.source_dir.exists():
             raise FileNotFoundError(f"源目录不存在: {self.source_dir}")
@@ -645,7 +739,9 @@ class ImageBatchProcessor:
             'title': '',
             'new_filename': '',
             'md_file': '',
-            'error': ''
+            'error': '',
+            'skipped': False,
+            'skip_reason': ''
         }
         
         try:
@@ -654,6 +750,17 @@ class ImageBatchProcessor:
             # 调用API分析图片
             api_result = self.processor.call_glm_api(image_path)
             if not api_result:
+                # 检查是否是因为token限制而跳过（如果启用了token预估）
+                if self.processor.enable_token_estimation:
+                    estimated_tokens = self.processor.estimate_token_count(image_path, self.processor.prompt)
+                    token_threshold = self.processor.max_tokens * 0.8
+                    
+                    if estimated_tokens > token_threshold:
+                        result['skipped'] = True
+                        result['skip_reason'] = f'数据量过大 (估算token: {estimated_tokens}, 阈值: {token_threshold})'
+                        logger.info(f"跳过处理 {image_path.name}: {result['skip_reason']}")
+                        return result
+                
                 result['error'] = 'API调用失败'
                 return result
             
@@ -713,9 +820,11 @@ class ImageBatchProcessor:
             'processed_files': [],
             'successful_files': [],
             'failed_files': [],
+            'skipped_files': [],
             'total_count': len(image_files),
             'success_count': 0,
-            'failure_count': 0
+            'failure_count': 0,
+            'skipped_count': 0
         }
         
         if use_concurrent and len(image_files) > 1:
@@ -735,7 +844,10 @@ class ImageBatchProcessor:
         
         # 统计结果
         for result in results['processed_files']:
-            if result['success']:
+            if result.get('skipped', False):
+                results['skipped_files'].append(result)
+                results['skipped_count'] += 1
+            elif result['success']:
                 results['successful_files'].append(result)
                 results['success_count'] += 1
             else:
@@ -761,6 +873,7 @@ class ImageBatchProcessor:
         print(f"待处理文件数量: {results['total_count']}")
         print(f"成功处理: {results['success_count']}")
         print(f"处理失败: {results['failure_count']}")
+        print(f"跳过处理: {results['skipped_count']}")
         
         if results['successful_files']:
             print(f"\n成功处理的文件:")
@@ -769,6 +882,13 @@ class ImageBatchProcessor:
                 print(f"    标题: {result['title']}")
                 print(f"    新文件名: {result['new_filename']}")
                 print(f"    Markdown文件: {Path(result['md_file']).name}")
+                print()
+        
+        if results['skipped_files']:
+            print(f"\n跳过处理的文件:")
+            for result in results['skipped_files']:
+                print(f"  {Path(result['file']).name}")
+                print(f"    跳过原因: {result['skip_reason']}")
                 print()
         
         if results['failed_files']:
@@ -781,7 +901,7 @@ class ImageBatchProcessor:
         print("="*60)
 
 def main(source_dir, api_key, model, dry_run, recursive, prompt, 
-         max_workers=4, max_requests_per_second=2.0, use_concurrent=True, max_tokens=1024, temperature=0.95):
+         max_workers=4, max_requests_per_second=2.0, use_concurrent=True, max_tokens=1024, temperature=0.95, enable_token_estimation=True):
     """主函数"""
     
     try:
@@ -790,7 +910,8 @@ def main(source_dir, api_key, model, dry_run, recursive, prompt,
                                       max_workers=max_workers, 
                                       max_requests_per_second=max_requests_per_second,
                                       max_tokens=max_tokens,
-                                      temperature=temperature)
+                                      temperature=temperature,
+                                      enable_token_estimation=enable_token_estimation)
         
         print(f"源目录: {processor.source_dir}")
         print(f"使用模型: {model}")
@@ -844,13 +965,20 @@ if __name__ == "__main__":
 
     # 模型配置（可选：glm-4.5v, glm-4v-plus-0111, glm-4v-flash, glm-4.1v-thinking-flashx, glm-4.1v-thinking-flash）
     # 支持img_url参数，img_url内容为base64
-    MODEL = "glm-4v-flash"  # 默认模型，MAX_TOKENS=1024
-    MAX_TOKENS = 1024  # 非thinking模型，MAX_TOKENS使用 1024
-    TEMPERATURE = 0.95  
+    # MODEL = "glm-4v-flash"  # 默认模型，MAX_TOKENS=1024
+    # MAX_TOKENS = 1024  # 非thinking模型，MAX_TOKENS使用 1024
+    # TEMPERATURE = 0.95
+    
+    # Token预估设置
+    ENABLE_TOKEN_ESTIMATION = False  # 是否启用token预估功能（True=启用，False=禁用）
+    # 启用时：会预先估算图片的token消耗，超过阈值时跳过处理，避免API调用失败
+    # 禁用时：所有图片都会尝试调用API，可能因数据量过大导致失败
+    # 注意：当图片数据量接近MAX_TOKENS的80%时，程序会自动跳过处理该图片，避免API调用失败
+    # Token估算基于图片像素尺寸：每个512×512像素块约消耗170个tokens，基础token数为85个  
 
-    # MODEL = "glm-4.1v-thinking-flashx"  
-    # MAX_TOKENS = 4096  # thinking模型使用 4096
-    # TEMPERATURE = 0.95  
+    MODEL = "glm-4.1v-thinking-flashx"  
+    MAX_TOKENS = 4096  # thinking模型使用 4096
+    TEMPERATURE = 0.95  
     
     # 是否试运行模式（True=只预览不实际处理文件，False=实际执行）
     DRY_RUN = False  # 建议先设为True预览结果，确认无误后改为False
@@ -864,4 +992,4 @@ if __name__ == "__main__":
     USE_CONCURRENT = True  # 是否使用并发处理（True=并发，False=顺序）
     # ================================================
     main(SOURCE_DIR, GLM_API_KEY, MODEL, DRY_RUN, RECURSIVE, PROMPT, 
-         MAX_WORKERS, MAX_REQUESTS_PER_SECOND, USE_CONCURRENT, MAX_TOKENS, TEMPERATURE)
+         MAX_WORKERS, MAX_REQUESTS_PER_SECOND, USE_CONCURRENT, MAX_TOKENS, TEMPERATURE, ENABLE_TOKEN_ESTIMATION)
